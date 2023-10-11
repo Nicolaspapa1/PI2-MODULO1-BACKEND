@@ -83,45 +83,6 @@ app.put("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* 
         message: "",
         payload: undefined,
     };
-    function showStatusMessage(msg) {
-        cr.message = msg;
-    }
-    function preencheuID() {
-        let resultado = false;
-        if (idAeronave > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function anoValido() {
-        let resultado = false;
-        if (anoFabricacao >= 1990 && anoFabricacao <= 2026) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function totalAssentosValidos() {
-        let resultado = false;
-        if (qtdAssento > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    if (!preencheuID()) {
-        showStatusMessage("ID não preenchido...");
-    }
-    if (!modeloAeronave) {
-        showStatusMessage("Modelo não preenchido...");
-    }
-    if (!fabricanteAeronave) {
-        showStatusMessage("Fabricante não preenchido...");
-    }
-    if (!anoValido()) {
-        showStatusMessage("Ano não preenchido ou inválido...");
-    }
-    if (!totalAssentosValidos()) {
-        showStatusMessage("Assentos não preenchido...");
-    }
     let conn;
     // conectando 
     try {
@@ -144,6 +105,53 @@ app.put("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* 
         if (rowsInserted !== undefined && rowsInserted === 1) {
             cr.status = "SUCCESS";
             cr.message = "Aeronave inserida.";
+        }
+    }
+    catch (e) {
+        if (e instanceof Error) {
+            cr.message = e.message;
+            console.log(e.message);
+        }
+        else {
+            cr.message = "Erro ao conectar ao oracle. Sem detalhes";
+        }
+    }
+    finally {
+        //fechar a conexao.
+        if (conn !== undefined) {
+            yield conn.close();
+        }
+        res.send(cr);
+    }
+}));
+app.delete("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    // para deletar a aeronave temos que receber o idAeronave na requisição.
+    const idAeronave = req.body.idAeronave;
+    // definindo um objeto de resposta.
+    let cr = {
+        status: "ERROR",
+        message: "",
+        payload: undefined,
+    };
+    let conn;
+    // conectando 
+    try {
+        conn = yield oracledb_1.default.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASSWORD,
+            connectionString: process.env.ORACLE_STR,
+        });
+        const cmdDeleteAero = `DELETE FROM AERONAVE WHERE IDAERONAVE = :1`;
+        const dados = [idAeronave];
+        let resDelete = yield conn.execute(cmdDeleteAero, dados);
+        // importante: efetuar o commit para gravar no Oracle.
+        yield conn.commit();
+        // obter a informação de quantas linhas foram inseridas.
+        // neste caso precisa ser exatamente 1
+        const rowsInserted = resDelete.rowsAffected;
+        if (rowsInserted !== undefined && rowsInserted === 1) {
+            cr.status = "SUCCESS";
+            cr.message = "Aeronave Deletada.";
         }
     }
     catch (e) {
