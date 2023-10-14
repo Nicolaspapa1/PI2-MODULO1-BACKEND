@@ -74,7 +74,7 @@ app.get("/Aeronaves", async(req, res)=>{
 }
 });
 
-app.put("/Aeronaves", async(req,res)=>{
+app.post("/Aeronaves", async(req,res)=>{
   
     // para inserir a aeronave temos que receber os dados na requisição.
     const idAeronave = req.body.idAeronave as number;
@@ -89,6 +89,86 @@ app.put("/Aeronaves", async(req,res)=>{
       message: "",
       payload: undefined,
     };
+
+    function preencheuID(){
+      let resultado = false;
+
+      if(idAeronave > 0){
+        resultado = true;
+      }
+      return resultado;
+    }
+
+    function preencheuModelo(){
+
+      let resultado = false;
+
+      if(modeloAeronave.length > 0){
+        resultado = true;
+      }
+      return resultado;
+    }
+
+    function preencheuFabricante(){
+
+      let resultado = false;
+
+      if(fabricanteAeronave.length > 0){
+        resultado = true;
+      }
+      return resultado;
+    }
+
+    function anoValido(){
+
+      let resultado = false;
+
+      if(anoFabricacao >= 1990 && anoFabricacao <= 2026){
+        resultado = true;
+      }
+      return resultado;
+    }
+
+    function totalAssentosValidos(){
+
+      let resultado = false;
+
+      if(qtdAssento > 0){
+        resultado = true;
+      }
+      return resultado;
+    }
+
+    try{
+
+      if(!preencheuID()){
+        cr.message = "ID não preenchido...";
+        throw new Error(cr.message);
+      }
+  
+      if(!preencheuModelo()){
+        cr.message = "Modelo não preenchido...";
+        throw new Error(cr.message);
+      }
+  
+      if(!preencheuFabricante()){
+        cr.message = "Fabricante não preenchido...";
+        throw new Error(cr.message);
+      }
+  
+      if(!anoValido()){
+        cr.message = "O ano deve ser de 1990 até 2026...";
+        throw new Error(cr.message);
+      }
+  
+      if(!totalAssentosValidos()){
+        cr.message = "Quantidade de Assentos não preenchido...";
+        throw new Error(cr.message);
+      }
+    }catch (e){
+      console.error("Erro capturado: ", cr.message);
+      res.send(cr);
+    }
   
     let conn;
   
@@ -117,6 +197,64 @@ app.put("/Aeronaves", async(req,res)=>{
       if(rowsInserted !== undefined &&  rowsInserted === 1) {
         cr.status = "SUCCESS"; 
         cr.message = "Aeronave inserida.";
+      }
+  
+    }catch(e){
+      if(e instanceof Error){
+        cr.message = e.message;
+        console.log(e.message);
+      }else{
+        cr.message = "Erro ao conectar ao oracle. Sem detalhes";
+      }
+    } finally {
+      //fechar a conexao.
+      if(conn!== undefined){
+        await conn.close();
+      }
+      res.send(cr);  
+    }
+  });
+
+  app.put("/Aeronaves", async(req,res)=>{
+  
+    // para alterar a aeronave temos que receber os dados na requisição.
+    const idAeronave = req.body.idAeronave as number;
+    const modeloAeronave = req.body.modeloAeronave as string;
+    const fabricanteAeronave = req.body.fabricanteAeronave as string;
+    const anoFabricacao = req.body.anoFabricacao as number;
+    const qtdAssento = req.body.qtdAssento as number;
+
+    // definindo um objeto de resposta.
+    let cr: CustomResponse = {
+      status: "ERROR",
+      message: "",
+      payload: undefined,
+    };
+  
+    let conn;
+  
+    // conectando 
+    try{
+        conn = await oracledb.getConnection({
+        user: process.env.ORACLE_USER,
+        password: process.env.ORACLE_PASSWORD,
+        connectionString: process.env.ORACLE_STR,
+      });
+  
+      const cmdAlterAero = `UPDATE AERONAVE SET MODELO = :1, FABRICANTE = :2, ANOFABRICACAO = :3, QTDASSENTOS = :4 WHERE IDAERONAVE = :5`;
+  
+      const dados = [modeloAeronave, fabricanteAeronave, anoFabricacao, qtdAssento, idAeronave];
+      let resAlter = await conn.execute(cmdAlterAero, dados);
+      
+      // importante: efetuar o commit para gravar no Oracle.
+      await conn.commit();
+    
+      // obter a informação de quantas linhas foram alteradas.
+      // neste caso precisa ser exatamente 1
+      const rowsAltered = resAlter.rowsAffected
+      if(rowsAltered !== undefined &&  rowsAltered === 1) {
+        cr.status = "SUCCESS"; 
+        cr.message = "Aeronave alterada.";
       }
   
     }catch(e){
@@ -167,8 +305,8 @@ app.put("/Aeronaves", async(req,res)=>{
     
       // obter a informação de quantas linhas foram inseridas.
       // neste caso precisa ser exatamente 1
-      const rowsInserted = resDelete.rowsAffected
-      if(rowsInserted !== undefined &&  rowsInserted === 1) {
+      const rowsDeleted = resDelete.rowsAffected
+      if(rowsDeleted !== undefined &&  rowsDeleted === 1) {
         cr.status = "SUCCESS"; 
         cr.message = "Aeronave Deletada.";
       }
