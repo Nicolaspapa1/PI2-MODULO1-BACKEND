@@ -12,46 +12,49 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+/***
+ * Versão melhorada do backend.
+ *
+ * 1 - externalização da constante oraConnAttribs (pois é usada em todos os serviços);
+ * O processo de externalizar é tirar aquela constante de dentro de cada serviço e colocá-la na área "global"
+ *
+ * 2 - criação de um tipo estruturado chamado aeronave.
+ *
+ * 3 - criação de uma função para validar se os dados da aeronave existem.
+ *
+ * 4 - retorno correto do array em JSON para representar as AERONAVES cadastradas.
+ *
+ */
+// recursos/modulos necessarios.
 const express_1 = __importDefault(require("express"));
 const oracledb_1 = __importDefault(require("oracledb"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
+// criamos um arquivo para conter só a constante de conexão do oracle. com isso deixamos o código mais limpo por aqui
+const OracleConnAtribs_1 = require("./OracleConnAtribs");
+// conversores para facilitar o trabalho de conversão dos resultados Oracle para vetores de tipos nossos.
+const Conversores_1 = require("./Conversores");
+// validadores para facilitar o trabalho de validação.
+const Validadores_1 = require("./Validadores");
+// preparar o servidor web de backend na porta 3000
 const app = (0, express_1.default)();
 const port = 3000;
+// preparar o servidor para dialogar no padrao JSON 
 app.use(express_1.default.json());
 app.use((0, cors_1.default)());
-dotenv_1.default.config();
+// Acertando a saída dos registros oracle em array puro javascript.
+oracledb_1.default.outFormat = oracledb_1.default.OUT_FORMAT_OBJECT;
 app.get("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // definindo um objeto de resposta.
-    let cr = {
-        status: "ERROR",
-        message: "",
-        payload: undefined,
-    };
-    let conn;
+    let cr = { status: "ERROR", message: "", payload: undefined, };
+    let connection;
     try {
-        conn = yield oracledb_1.default.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASSWORD,
-            connectionString: process.env.ORACLE_STR,
-        });
-        const cmdSelectAero = `SELECT * FROM AERONAVE`;
-        let resSelect = yield conn.execute(cmdSelectAero);
-        if (resSelect.rows && resSelect.rows.length > 0) {
-            const aeronaves = resSelect.rows.map((row) => ({
-                idAeronave: row[0],
-                modeloAeronave: row[1],
-                fabricanteAeronave: row[2],
-                anoFabricacao: row[3],
-                qtdAssento: row[4],
-            }));
-            cr.status = "SUCCESS";
-            cr.message = "Aeronaves recuperadas com sucesso.";
-            cr.payload = aeronaves;
-        }
-        else {
-            cr.message = "Nenhum resultado encontrado para a consulta.";
-        }
+        connection = yield oracledb_1.default.getConnection(OracleConnAtribs_1.oraConnAttribs);
+        // atenção: mudamos a saída para que o oracle entregue um objeto puro em JS no rows.
+        // não mais um array dentro de array.
+        let resultadoConsulta = yield connection.execute(`SELECT * FROM AERONAVE`);
+        cr.status = "SUCCESS";
+        cr.message = "Dados obtidos";
+        // agora sempre vamos converter as linhas do oracle em resultados do nosso TIPO.
+        cr.payload = ((0, Conversores_1.rowsToAeronaves)(resultadoConsulta.rows));
     }
     catch (e) {
         if (e instanceof Error) {
@@ -63,207 +66,153 @@ app.get("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* 
         }
     }
     finally {
-        //fechar a conexao.
-        if (conn !== undefined) {
-            yield conn.close();
+        if (connection !== undefined) {
+            yield connection.close();
         }
         res.send(cr);
     }
 }));
 app.post("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // para inserir a aeronave temos que receber os dados na requisição.
-    const idAeronave = req.body.idAeronave;
-    const modeloAeronave = req.body.modeloAeronave;
-    const fabricanteAeronave = req.body.fabricanteAeronave;
-    const anoFabricacao = req.body.anoFabricacao;
-    const qtdAssento = req.body.qtdAssento;
     // definindo um objeto de resposta.
     let cr = {
         status: "ERROR",
         message: "",
         payload: undefined,
     };
-    function preencheuID() {
-        let resultado = false;
-        if (idAeronave > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function preencheuModelo() {
-        let resultado = false;
-        if (modeloAeronave.length > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function preencheuFabricante() {
-        let resultado = false;
-        if (fabricanteAeronave.length > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function anoValido() {
-        let resultado = false;
-        if (anoFabricacao >= 1990 && anoFabricacao <= 2026) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    function totalAssentosValidos() {
-        let resultado = false;
-        if (qtdAssento > 0) {
-            resultado = true;
-        }
-        return resultado;
-    }
-    try {
-        if (!preencheuID()) {
-            cr.message = "ID não preenchido...";
-            throw new Error(cr.message);
-        }
-        if (!preencheuModelo()) {
-            cr.message = "Modelo não preenchido...";
-            throw new Error(cr.message);
-        }
-        if (!preencheuFabricante()) {
-            cr.message = "Fabricante não preenchido...";
-            throw new Error(cr.message);
-        }
-        if (!anoValido()) {
-            cr.message = "O ano deve ser de 1990 até 2026...";
-            throw new Error(cr.message);
-        }
-        if (!totalAssentosValidos()) {
-            cr.message = "Quantidade de Assentos não preenchido...";
-            throw new Error(cr.message);
-        }
-    }
-    catch (e) {
-        console.error("Erro capturado: ", cr.message);
+    // UAU! Agora com um tipo definido podemos simplesmente converter tudo que 
+    // chega na requisição para um tipo nosso!
+    const aero = req.body;
+    console.log(aero);
+    // antes de prosseguir, vamos validar a aeronave!
+    // se não for válida já descartamos.
+    let [valida, mensagem] = (0, Validadores_1.aeronaveValida)(aero);
+    if (!valida) {
+        // já devolvemos a resposta com o erro e terminamos o serviço.
+        cr.message = mensagem;
         res.send(cr);
     }
-    let conn;
-    // conectando 
-    try {
-        conn = yield oracledb_1.default.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASSWORD,
-            connectionString: process.env.ORACLE_STR,
-        });
-        const cmdInsertAero = `INSERT INTO AERONAVE 
+    else {
+        // continuamos o processo porque passou na validação.
+        let connection;
+        try {
+            const cmdInsertAero = `INSERT INTO AERONAVE 
       (IDAERONAVE, MODELO, FABRICANTE, ANOFABRICACAO, QTDASSENTOS)
       VALUES
       (:1, :2, :3, :4, :5)`;
-        const dados = [idAeronave, modeloAeronave, fabricanteAeronave, anoFabricacao, qtdAssento];
-        let resInsert = yield conn.execute(cmdInsertAero, dados);
-        // importante: efetuar o commit para gravar no Oracle.
-        yield conn.commit();
-        // obter a informação de quantas linhas foram inseridas.
-        // neste caso precisa ser exatamente 1
-        const rowsInserted = resInsert.rowsAffected;
-        if (rowsInserted !== undefined && rowsInserted === 1) {
-            cr.status = "SUCCESS";
-            cr.message = "Aeronave inserida.";
+            const dados = [aero.idAeronave, aero.modeloAeronave, aero.fabricanteAeronave, aero.anoFabricacao, aero.qtdAssento];
+            connection = yield oracledb_1.default.getConnection(OracleConnAtribs_1.oraConnAttribs);
+            let resInsert = yield connection.execute(cmdInsertAero, dados);
+            // importante: efetuar o commit para gravar no Oracle.
+            yield connection.commit();
+            // obter a informação de quantas linhas foram inseridas. 
+            // neste caso precisa ser exatamente 1
+            const rowsInserted = resInsert.rowsAffected;
+            if (rowsInserted !== undefined && rowsInserted === 1) {
+                cr.status = "SUCCESS";
+                cr.message = "Aeronave inserida.";
+            }
         }
-    }
-    catch (e) {
-        if (e instanceof Error) {
-            cr.message = e.message;
-            console.log(e.message);
+        catch (e) {
+            if (e instanceof Error) {
+                cr.message = e.message;
+                console.log(e.message);
+            }
+            else {
+                cr.message = "Erro ao conectar ao oracle. Sem detalhes";
+            }
         }
-        else {
-            cr.message = "Erro ao conectar ao oracle. Sem detalhes";
+        finally {
+            //fechar a conexao.
+            if (connection !== undefined) {
+                yield connection.close();
+            }
+            res.send(cr);
         }
-    }
-    finally {
-        //fechar a conexao.
-        if (conn !== undefined) {
-            yield conn.close();
-        }
-        res.send(cr);
     }
 }));
 app.put("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // para alterar a aeronave temos que receber os dados na requisição.
-    const idAeronave = req.body.idAeronave;
-    const modeloAeronave = req.body.modeloAeronave;
-    const fabricanteAeronave = req.body.fabricanteAeronave;
-    const anoFabricacao = req.body.anoFabricacao;
-    const qtdAssento = req.body.qtdAssento;
     // definindo um objeto de resposta.
     let cr = {
         status: "ERROR",
         message: "",
         payload: undefined,
     };
-    let conn;
-    // conectando 
-    try {
-        conn = yield oracledb_1.default.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASSWORD,
-            connectionString: process.env.ORACLE_STR,
-        });
-        const cmdAlterAero = `UPDATE AERONAVE SET MODELO = :1, FABRICANTE = :2, ANOFABRICACAO = :3, QTDASSENTOS = :4 WHERE IDAERONAVE = :5`;
-        const dados = [modeloAeronave, fabricanteAeronave, anoFabricacao, qtdAssento, idAeronave];
-        let resAlter = yield conn.execute(cmdAlterAero, dados);
-        // importante: efetuar o commit para gravar no Oracle.
-        yield conn.commit();
-        // obter a informação de quantas linhas foram alteradas.
-        // neste caso precisa ser exatamente 1
-        const rowsAltered = resAlter.rowsAffected;
-        if (rowsAltered !== undefined && rowsAltered === 1) {
-            cr.status = "SUCCESS";
-            cr.message = "Aeronave alterada.";
-        }
-    }
-    catch (e) {
-        if (e instanceof Error) {
-            cr.message = e.message;
-            console.log(e.message);
-        }
-        else {
-            cr.message = "Erro ao conectar ao oracle. Sem detalhes";
-        }
-    }
-    finally {
-        //fechar a conexao.
-        if (conn !== undefined) {
-            yield conn.close();
-        }
+    // UAU! Agora com um tipo definido podemos simplesmente converter tudo que 
+    // chega na requisição para um tipo nosso!
+    const aero = req.body;
+    console.log(aero);
+    // antes de prosseguir, vamos validar a aeronave!
+    // se não for válida já descartamos.
+    let [valida, mensagem] = (0, Validadores_1.aeronaveValida)(aero);
+    if (!valida) {
+        // já devolvemos a resposta com o erro e terminamos o serviço.
+        cr.message = mensagem;
         res.send(cr);
+    }
+    else {
+        // continuamos o processo porque passou na validação.
+        let connection;
+        try {
+            const cmdAlterAero = `UPDATE AERONAVE SET MODELO = :1, FABRICANTE = :2, ANOFABRICACAO = :3, QTDASSENTOS = :4 WHERE IDAERONAVE = :5`;
+            const dados = [aero.modeloAeronave, aero.fabricanteAeronave, aero.anoFabricacao, aero.qtdAssento, aero.idAeronave];
+            connection = yield oracledb_1.default.getConnection(OracleConnAtribs_1.oraConnAttribs);
+            let resInsert = yield connection.execute(cmdAlterAero, dados);
+            // importante: efetuar o commit para gravar no Oracle.
+            yield connection.commit();
+            // obter a informação de quantas linhas foram inseridas. 
+            // neste caso precisa ser exatamente 1
+            const rowsInserted = resInsert.rowsAffected;
+            if (rowsInserted !== undefined && rowsInserted === 1) {
+                cr.status = "SUCCESS";
+                cr.message = "Aeronave alterada.";
+            }
+        }
+        catch (e) {
+            if (e instanceof Error) {
+                cr.message = e.message;
+                console.log(e.message);
+            }
+            else {
+                cr.message = "Erro ao conectar ao oracle. Sem detalhes";
+            }
+        }
+        finally {
+            //fechar a conexao.
+            if (connection !== undefined) {
+                yield connection.close();
+            }
+            res.send(cr);
+        }
     }
 }));
 app.delete("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    // para deletar a aeronave temos que receber o idAeronave na requisição.
-    const idAeronave = req.body.idAeronave;
+    // excluindo a aeronave pelo código dela:
+    const codigo = req.body.codigo;
+    console.log('Codigo recebido: ' + codigo);
     // definindo um objeto de resposta.
     let cr = {
         status: "ERROR",
         message: "",
         payload: undefined,
     };
-    let conn;
     // conectando 
+    let connection;
     try {
-        conn = yield oracledb_1.default.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASSWORD,
-            connectionString: process.env.ORACLE_STR,
-        });
-        const cmdDeleteAero = `DELETE FROM AERONAVE WHERE IDAERONAVE = :1`;
-        const dados = [idAeronave];
-        let resDelete = yield conn.execute(cmdDeleteAero, dados);
+        connection = yield oracledb_1.default.getConnection(OracleConnAtribs_1.oraConnAttribs);
+        const cmdDeleteAero = `DELETE AERONAVE WHERE IDAERONAVE = :1`;
+        const dados = [codigo];
+        let resDelete = yield connection.execute(cmdDeleteAero, dados);
         // importante: efetuar o commit para gravar no Oracle.
-        yield conn.commit();
-        // obter a informação de quantas linhas foram inseridas.
+        yield connection.commit();
+        // obter a informação de quantas linhas foram inseridas. 
         // neste caso precisa ser exatamente 1
         const rowsDeleted = resDelete.rowsAffected;
         if (rowsDeleted !== undefined && rowsDeleted === 1) {
             cr.status = "SUCCESS";
-            cr.message = "Aeronave Deletada.";
+            cr.message = "Aeronave excluída.";
+        }
+        else {
+            cr.message = "Aeronave não excluída. Verifique se o código informado está correto.";
         }
     }
     catch (e) {
@@ -276,10 +225,10 @@ app.delete("/Aeronaves", (req, res) => __awaiter(void 0, void 0, void 0, functio
         }
     }
     finally {
-        //fechar a conexao.
-        if (conn !== undefined) {
-            yield conn.close();
-        }
+        // fechando a conexao
+        if (connection !== undefined)
+            yield connection.close();
+        // devolvendo a resposta da requisição.
         res.send(cr);
     }
 }));
